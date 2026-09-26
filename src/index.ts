@@ -68,12 +68,13 @@ export default function monitorExtension(pi: ExtensionAPI): void {
       return;
     }
     if (!widgetInstalled) {
-      ctx.ui.setWidget(WIDGET_KEY, (tui) => {
+      ctx.ui.setWidget(WIDGET_KEY, (tui, theme) => {
         widgetTui = tui;
         return new MonitorWidget(
           () => (current === null ? [] : renderMonitorWidget(current.store.state)),
           10,
           () => void openExplorer(currentCtx ?? ctx),
+          () => currentCtx?.ui.theme ?? theme,
         );
       });
       widgetInstalled = true;
