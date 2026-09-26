@@ -67,10 +67,11 @@ Then ask the agent to `monitor action=arm ...`, or drive the tool directly.
 
 ## Terminal UI
 
-While monitors are armed, a widget above the editor shows the board; it
-repaints on every state transition. `/monitor` opens an inspector that adds
-what the board omits — per-monitor counters, the script and cwd, and a bounded
-tail of the log file.
+While monitors are armed, a widget above the editor shows a header and one
+`📟 name` line per monitor; it repaints on every state transition. Click the
+widget (or run `/monitor`) to open a scrollable inspector that adds what the
+widget omits — per-monitor counters, the script and cwd, and a bounded tail of
+the log file.
 
 ## The model
 

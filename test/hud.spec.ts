@@ -42,10 +42,13 @@ describe("monitor hud renderers", () => {
     expect(renderMonitorWidget(initMonitorState())).toEqual([]);
   });
 
-  it("shows the running monitor in the widget", () => {
-    const lines = renderMonitorWidget(withMonitor(logFile(["tick"]))).join("\n");
-    expect(lines).toContain("1 total");
-    expect(lines).toContain("t");
+  it("shows only 📟 names in the widget, not the script or log", () => {
+    const logPath = logFile(["tick"]);
+    const lines = renderMonitorWidget(withMonitor(logPath)).join("\n");
+    expect(lines).toContain("1 total · 1 running");
+    expect(lines).toContain("📟 t");
+    expect(lines).not.toContain("echo tick");
+    expect(lines).not.toContain(logPath);
   });
 
   it("includes counters and a log tail in the inspector", () => {
@@ -75,5 +78,15 @@ describe("MonitorWidget", () => {
     expect(lines).toHaveLength(2);
     for (const line of lines) expect(visibleWidth(line)).toBe(50);
     expect(lines[1]).toContain("+2 more");
+  });
+
+  it("activates on a left click", () => {
+    let clicks = 0;
+    const widget = new MonitorWidget(() => ["one"], 10, () => {
+      clicks += 1;
+    });
+    const event = { type: "click", button: "left", x: 1, y: 1, screenX: 1, screenY: 1, width: 50, height: 1, shift: false, alt: false, ctrl: false } as const;
+    expect(widget.handleMouse(event)).toEqual({ handled: true });
+    expect(clicks).toBe(1);
   });
 });

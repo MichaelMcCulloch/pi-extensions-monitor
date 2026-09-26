@@ -8,8 +8,8 @@
 
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component, type TUI } from "@earendil-works/pi-tui";
-import { glyph, lifecycleLabel, renderBoard } from "../engine/projection.ts";
+import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component, type TUI, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import { glyph, lifecycleLabel } from "../engine/projection.ts";
 import type { MonitorState } from "../engine/state.ts";
 
 /** True when no monitor has ever been armed. */
@@ -17,10 +17,15 @@ export function isMonitorEmpty(state: MonitorState): boolean {
   return Object.keys(state.specs).length === 0;
 }
 
-/** The persistent widget: the verified board, unchanged. */
+/** The persistent widget: a header and one 📟 name per monitor. Click to inspect. */
 export function renderMonitorWidget(state: MonitorState): string[] {
-  if (isMonitorEmpty(state)) return [];
-  return renderBoard(state).split("\n");
+  const monitors = [...Object.keys(state.specs)].sort();
+  if (monitors.length === 0) return [];
+  const abstract = state as unknown as MonitorState;
+  const running = monitors.filter((monitor) => (abstract.status[monitor] ?? "absent") === "running").length;
+  const lines = [`monitor: ${monitors.length} total · ${running} running`];
+  for (const monitor of monitors) lines.push(`📟 ${monitor}`);
+  return lines;
 }
 
 /** Read the last `maxLines` lines of a file, bounded by `maxBytes`. */
@@ -78,17 +83,26 @@ export class MonitorWidget implements Component {
   public constructor(
     private readonly lines: () => string[],
     private readonly maxLines = 10,
+    private readonly onActivate?: () => void,
   ) {}
 
   public invalidate(): void {
     // Rendering reads the live state each frame.
   }
 
+  public handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.type === "click" && event.button === "left" && this.onActivate !== undefined) {
+      this.onActivate();
+      return { handled: true };
+    }
+    return undefined;
+  }
+
   public render(width: number): string[] {
     const body = this.lines();
     if (body.length === 0) return [];
     const shown = body.slice(0, this.maxLines);
-    if (body.length > this.maxLines) shown.push(`… +${body.length - this.maxLines} more — /monitor`);
+    if (body.length > this.maxLines) shown.push(`… +${body.length - this.maxLines} more — click to open`);
     return shown.map((line) => truncateToWidth(line, width, "…", true));
   }
 }

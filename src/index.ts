@@ -70,7 +70,11 @@ export default function monitorExtension(pi: ExtensionAPI): void {
     if (!widgetInstalled) {
       ctx.ui.setWidget(WIDGET_KEY, (tui) => {
         widgetTui = tui;
-        return new MonitorWidget(() => (current === null ? [] : renderMonitorWidget(current.store.state)));
+        return new MonitorWidget(
+          () => (current === null ? [] : renderMonitorWidget(current.store.state)),
+          10,
+          () => void openExplorer(currentCtx ?? ctx),
+        );
       });
       widgetInstalled = true;
     }
@@ -138,24 +142,29 @@ export default function monitorExtension(pi: ExtensionAPI): void {
 
   pi.registerTool(buildMonitorTool((ctx) => ensure(ctx).runtime));
 
+  const openExplorer = async (ctx: ExtensionContext): Promise<void> => {
+    if (ctx.mode !== "tui" || !ctx.hasUI) return;
+    const session = ensure(ctx);
+    await ctx.ui.custom<undefined>(
+      (tui, theme, _keybindings, done) =>
+        new MonitorExplorer(
+          (width) => renderMonitorDetail(session.store.state, width),
+          tui,
+          () => ctx.ui.theme,
+          () => done(undefined),
+        ),
+      { overlay: true, overlayOptions: { width: "92%", maxHeight: "92%", anchor: "center", margin: 1 } },
+    );
+  };
+
   pi.registerCommand("monitor", {
     description: "Show the armed monitors; open the scrollable inspector",
     handler: async (_args, ctx) => {
-      const session = ensure(ctx);
       if (ctx.mode !== "tui" || !ctx.hasUI) {
-        ctx.ui.notify(renderBoard(session.store.state), "info");
+        ctx.ui.notify(renderBoard(ensure(ctx).store.state), "info");
         return;
       }
-      await ctx.ui.custom<undefined>(
-        (tui, theme, _keybindings, done) =>
-          new MonitorExplorer(
-            (width) => renderMonitorDetail(session.store.state, width),
-            tui,
-            () => ctx.ui.theme,
-            () => done(undefined),
-          ),
-        { overlay: true, overlayOptions: { width: "92%", maxHeight: "92%", anchor: "center", margin: 1 } },
-      );
+      await openExplorer(ctx);
     },
   });
 }
