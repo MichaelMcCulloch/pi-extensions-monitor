@@ -5,9 +5,13 @@
  * so branching rewinds the monitors with the session. One store per session;
  * the reducer is `referenceReduceMonitorState`, the mirror of
  * `spec/MonitorSystem.tla`.
+ *
+ * Armed monitors are also shown persistently above the editor, and `/monitor`
+ * opens an inspector with counters and a tail of each log file.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { TUI } from "@earendil-works/pi-tui";
 import { renderBoard } from "./engine/projection.ts";
 import { DEFAULT_MONITOR_POLICY, initMonitorState, type MonitorState } from "./engine/state.ts";
 import { MonitorInjector, type OutgoingMessage } from "./extension/injector.ts";
@@ -15,9 +19,13 @@ import { MonitorRuntime } from "./extension/runtime.ts";
 import { MonitorStore, type MonitorPersistence } from "./extension/store.ts";
 import { MonitorSupervisor } from "./extension/supervisor.ts";
 import { buildMonitorTool } from "./extension/tool.ts";
+import { MonitorExplorer, MonitorWidget, isMonitorEmpty, renderMonitorDetail, renderMonitorWidget } from "./extension/hud.ts";
 
 /** The custom-entry type that carries the complete snapshot. */
 export const MONITOR_STATE_ENTRY = "monitor/state";
+
+/** The widget slot above the editor. */
+const WIDGET_KEY = "monitor-board";
 
 /** Fold the newest persisted monitor snapshot out of a session branch. */
 export function latestSnapshot(ctx: ExtensionContext): MonitorState | null {
@@ -40,6 +48,34 @@ interface Session {
 /** Default export consumed by pi. */
 export default function monitorExtension(pi: ExtensionAPI): void {
   let current: Session | null = null;
+  let currentCtx: ExtensionContext | null = null;
+  let widgetTui: TUI | null = null;
+  let widgetInstalled = false;
+
+  const hideWidget = (): void => {
+    if (widgetInstalled && currentCtx !== null && currentCtx.mode === "tui" && currentCtx.hasUI) {
+      currentCtx.ui.setWidget(WIDGET_KEY, undefined);
+    }
+    widgetInstalled = false;
+  };
+
+  const refreshWidget = (): void => {
+    const ctx = currentCtx;
+    if (ctx === null || current === null) return;
+    if (ctx.mode !== "tui" || !ctx.hasUI) return;
+    if (isMonitorEmpty(current.store.state)) {
+      hideWidget();
+      return;
+    }
+    if (!widgetInstalled) {
+      ctx.ui.setWidget(WIDGET_KEY, (tui) => {
+        widgetTui = tui;
+        return new MonitorWidget(() => (current === null ? [] : renderMonitorWidget(current.store.state)));
+      });
+      widgetInstalled = true;
+    }
+    widgetTui?.requestRender();
+  };
 
   const close = (): void => {
     current?.runtime.shutdown();
@@ -48,7 +84,12 @@ export default function monitorExtension(pi: ExtensionAPI): void {
 
   const setup = (ctx: ExtensionContext): Session => {
     const snapshot = latestSnapshot(ctx);
-    const persistence: MonitorPersistence = { append: (state) => pi.appendEntry(MONITOR_STATE_ENTRY, state) };
+    const persistence: MonitorPersistence = {
+      append: (state) => {
+        pi.appendEntry(MONITOR_STATE_ENTRY, state);
+        refreshWidget();
+      },
+    };
     const store = new MonitorStore(persistence, snapshot ?? initMonitorState(), DEFAULT_MONITOR_POLICY);
     const supervisor = new MonitorSupervisor();
     const send = (outgoing: OutgoingMessage): void => pi.sendMessage(outgoing.message, outgoing.options);
@@ -74,24 +115,47 @@ export default function monitorExtension(pi: ExtensionAPI): void {
   const ensure = (ctx: ExtensionContext): Session => current ?? setup(ctx);
 
   pi.on("session_start", (_event, ctx) => {
+    currentCtx = ctx;
     close();
     const session = setup(ctx);
     session.runtime.reconcileOnLoad();
+    refreshWidget();
   });
   pi.on("session_tree", (_event, ctx) => {
+    currentCtx = ctx;
     close();
     const session = setup(ctx);
     session.runtime.reconcileOnLoad();
+    refreshWidget();
   });
   pi.on("agent_settled", () => current?.runtime.settle());
-  pi.on("session_shutdown", () => close());
+  pi.on("session_shutdown", () => {
+    close();
+    hideWidget();
+    currentCtx = null;
+    widgetTui = null;
+  });
 
   pi.registerTool(buildMonitorTool((ctx) => ensure(ctx).runtime));
 
   pi.registerCommand("monitor", {
-    description: "Show the armed monitors",
+    description: "Show the armed monitors; open the scrollable inspector",
     handler: async (_args, ctx) => {
-      ctx.ui.notify(renderBoard(ensure(ctx).store.state), "info");
+      const session = ensure(ctx);
+      if (ctx.mode !== "tui" || !ctx.hasUI) {
+        ctx.ui.notify(renderBoard(session.store.state), "info");
+        return;
+      }
+      await ctx.ui.custom<undefined>(
+        (tui, theme, _keybindings, done) =>
+          new MonitorExplorer(
+            (width) => renderMonitorDetail(session.store.state, width),
+            tui,
+            () => ctx.ui.theme,
+            () => done(undefined),
+          ),
+        { overlay: true, overlayOptions: { width: "92%", maxHeight: "92%", anchor: "center", margin: 1 } },
+      );
     },
   });
 }

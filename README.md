@@ -65,6 +65,13 @@ Then ask the agent to `monitor action=arm ...`, or drive the tool directly.
 | `cancel` | kill the process group and disarm (fenced) |
 | `list` / `status` | render the board: status, generation, queue depth, log path |
 
+## Terminal UI
+
+While monitors are armed, a widget above the editor shows the board; it
+repaints on every state transition. `/monitor` opens an inspector that adds
+what the board omits — per-monitor counters, the script and cwd, and a bounded
+tail of the log file.
+
 ## The model
 
 `spec/MonitorSystem.tla` is the one verification subject. Per monitor it owns:
