@@ -50,4 +50,15 @@ describe("monitor extension", () => {
     await runTool(fake, { action: "cancel", name: "listed" });
     fake.lifecycle("session_shutdown");
   });
+
+  it("surfaces a refusal as a thrown tool error so the agent sees the fault", async () => {
+    const fake = boot();
+    // Returning the refusal as content would be recorded as a successful call
+    // (`isError: false`); throwing is the only way to signal failure.
+    await expect(runTool(fake, { action: "arm", name: "Bad Name", script: "echo hi" })).rejects.toThrow(
+      /monitor-invalid-name/,
+    );
+    await expect(runTool(fake, { action: "arm", name: "armless" })).rejects.toThrow(/monitor-missing-script/);
+    fake.lifecycle("session_shutdown");
+  });
 });

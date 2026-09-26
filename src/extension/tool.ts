@@ -29,7 +29,6 @@ interface MonitorDetails {
   readonly gen?: number;
   readonly logPath?: string;
   readonly board: string;
-  readonly error?: string;
 }
 
 export function buildMonitorTool(getRuntime: (ctx: ExtensionContext) => MonitorRuntime): ToolDefinition<typeof MonitorParams, MonitorDetails> {
@@ -81,10 +80,14 @@ export function buildMonitorTool(getRuntime: (ctx: ExtensionContext) => MonitorR
         };
       } catch (error) {
         if (error instanceof MonitorRuntimeError) {
-          return {
-            content: [{ type: "text", text: `monitor ${params.action} refused: ${error.message}` }],
-            details: { action: params.action, board: board(), error: error.code },
-          };
+          // The agent runtime only marks a tool result as an error when
+          // `execute` throws; a refusal returned as ordinary content is
+          // reported to the model as success. Rethrow with the action and the
+          // stable code so the failure is visible and actionable.
+          throw new MonitorRuntimeError(
+            error.code,
+            `monitor ${params.action} refused (${error.code}): ${error.message}`,
+          );
         }
         throw error;
       }
