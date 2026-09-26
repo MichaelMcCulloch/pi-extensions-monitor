@@ -75,10 +75,10 @@ describe("MonitorWidget", () => {
   it("fits lines and caps with a hint", () => {
     const widget = new MonitorWidget(() => ["one", "two", "three"], 1);
     const lines = widget.render(50);
-    // one kept + omission hint + separator
+    // separator + one kept + omission hint
     expect(lines).toHaveLength(3);
     for (const line of lines) expect(visibleWidth(line)).toBe(50);
-    expect(lines[1]).toContain("+2 more");
+    expect(lines[2]).toContain("+2 more");
   });
 
   it("activates on a left click", () => {
