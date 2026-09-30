@@ -8,7 +8,8 @@ alert. The agent can sit idle without polling — the loop lives in the script,
 the wake lives in the verified core.
 
 The whole thing is built on a **lifecycle machine coupled to a rate-limited
-event ledger**, formally verified with TLA+/TLC. The rate limiter is part of the
+event ledger**, formally verified with TLA+/TLC and with an inductive TLAPS
+proof for arbitrary constants. The rate limiter is part of the
 verified core, not a delivery heuristic: at most `Rate` lines are admitted per
 window, and every non-admitted line is accounted for by a digest, so nothing is
 silently lost.
@@ -17,7 +18,8 @@ silently lost.
 pnpm install
 pnpm test              # model mirror, spec parity, engine, extension
 pnpm verify:formal     # TLC model + liveness + trace validation
-pnpm verify            # typecheck + tests + verify:formal + TLAPS proof (needs tlapm 1.6+)
+pnpm verify            # typecheck + tests + verify:formal + TLAPS proof
+                       # (verify:proof needs tlapm 1.6+ and a Z3 on PATH)
 ```
 
 Load it during development:
@@ -38,13 +40,15 @@ Then ask the agent to `monitor action=arm ...`, or drive the tool directly.
 | the script exits non-zero / signal | **yes** | one crash alert naming exit/signal and the log path |
 | the timeout expires (optional) | **yes** | one timeout alert; the child is killed |
 | `cancel` | no | kill the process group; bump the fence; disarm |
+| `clear` | no | forget finished monitors; the log files stay on disk |
 | pi exits | no | the child is killed on `session_shutdown` |
 | a restored `running` monitor has no process | **yes** | one reconciliation alert; disarm |
 | stderr | **no** | written to the log only |
 
 - **Retention is the log, not the state.** The complete stdout+stderr log is at
   `/tmp/pi-monitor-<uuid>.log`; `arm` returns the path and every notice repeats
-  it.
+  it. `clear` forgets finished monitors from the session state but never
+  touches their logs.
 - **Delivery is `steer`.** `pi.sendMessage(msg, { triggerTurn: true })` steers
   while the agent is active and starts a turn while it is idle. There is no idle
   check (it would race) and no `followUp` (it would queue behind pending work).
@@ -63,15 +67,19 @@ Then ask the agent to `monitor action=arm ...`, or drive the tool directly.
 |---|---|
 | `arm` | declare and start a named monitor; returns the log path |
 | `cancel` | kill the process group and disarm (fenced) |
+| `clear` | forget finished monitors (all when `name` is omitted); a running monitor must be cancelled first |
 | `list` / `status` | render the board: status, generation, queue depth, log path |
 
 ## Terminal UI
 
-While monitors are armed, a widget above the editor shows a header and one
-`📟 name` line per monitor; it repaints on every state transition. Click the
-widget (or run `/monitor`) to open a scrollable inspector that adds what the
-widget omits — per-monitor counters, the script and cwd, and a bounded tail of
-the log file.
+While monitors are active (armed or running), a widget above the editor shows a
+header and one `📟 name` line per active monitor; it repaints on every state
+transition and disappears once every monitor has finished. A finished count in
+the header tells you when there is stale state to clear. Click the widget (or
+run `/monitor`) to open a scrollable inspector that adds what the widget omits —
+per-monitor counters, the script and cwd, and a bounded tail of the log file.
+The inspector groups active monitors first and keeps finished ones under a
+`finished (n)` heading until `monitor action=clear` forgets them.
 
 ## The model
 
@@ -86,11 +94,19 @@ the log file.
 | `windowAdmitted`, `suppressed`, `digested`, `digestDue` | the rate limiter |
 | `alertPending`, `alertSent` | the one notice |
 
-Fourteen actions: `Arm`, `Admit`, `Emit`, `Deliver`, `EndWindow`, `Digest`,
+Fifteen actions: `Arm`, `Admit`, `Emit`, `Deliver`, `EndWindow`, `Digest`,
 `DeliverAlert`, `Exit`, `Crash`, `Timeout`, `Cancel`, `EffectStale`,
-`Reconcile`, and the global `PiCrash`. The `armed`/`running` split is
+`Reconcile`, `Clear`, and the global `PiCrash`. The `armed`/`running` split is
 load-bearing: after a process death a `running` monitor can only be
 `Reconcile`d, never silently re-admitted.
+
+`Clear` is the forgetting step: it resets a disarmed monitor to its initial
+record, so the state is indistinguishable from one that was never armed. Its
+guard requires nothing to be owed (no queued or suppressed output, no digest,
+no notice) and no effect, because removal at the production layer erases the
+generation fence that would otherwise keep a stale process from writing into a
+re-armed generation. Its production payload step then drops the opaque spec, so
+the board stops listing the monitor.
 
 **Safety (`CoreInv`)**: `TypeOK`, `EffectFenceBound`, `RunningEffectCurrent`,
 `ArmedIdle`, `StaleOnlyAfterInvalidation`, `DisarmedCurrentNoEffect`,
@@ -120,15 +136,23 @@ law and notice completeness in `MonitorView.tla`) and the four liveness
 properties. The window boundary is an uninterpreted environment transition, so
 the check covers every window schedule.
 
-### What TLAPS is meant to prove
+### What TLAPS proves
 
 `spec/MonitorSystemProof.tla` states `THEOREM SafetyCore == Spec => []CoreInv`
-for **arbitrary** constants: `Init => CoreInv` and each action preserves every
-component. **Status: written, not machine-checked here.** `tlapm` is not
-available in this environment (there is no `tlapm` opam package and no binary on
-`PATH`), and Z3 alone is not enough. On a machine with TLAPS 1.6+,
-`pnpm verify:proof` runs it. The TLC result above is the machine-checked
-evidence that ships green here.
+for **arbitrary** constants. The route is an inductive strengthening:
+`InductiveInv == CoreInv /\ ArmedHasNoTerminal` is shown to hold initially
+and to be preserved by every action of `Next`, and `PTL` lifts that to
+`[]CoreInv`. The proof is **machine-checked**: 104 obligations, all discharged
+by `tlapm` 1.6.0-pre and Z3 (`pnpm verify:proof`). One environment note is baked
+into `scripts/tlapm.mjs`: TLAPS's default SMT(v3) encoding leaves some
+definitional preservation goals as quantified formulas the solvers return
+`unknown` on, so the driver runs `tlapm --debug oldsmt` (the v2 encoding). The
+proof is checked with Z3 4.16; the Z3 4.8.9 bundled in the TLAPS 1.6.0-pre
+tarball does not close every obligation, so point TLAPS's backend at a 4.16
+binary (e.g. a wrapper at `<tlapm>/lib/tlapm/backends/bin/z3`).
+
+The TLC result above covers the fixture; this proof covers every value of the
+constants.
 
 ### How the proof reaches the implementation
 
@@ -139,11 +163,13 @@ evidence that ships green here.
 2. **Production is the verified relation.** `MonitorStore`'s reducer is
    `referenceReduceMonitorState`; there is no second state. The runtime maps
    every OS outcome (`onLine`, `onExit`, `onError`, `onTimeout`) onto a model
-   event.
+   event, and `action=clear` is the `Clear` transition whose payload step drops
+   the opaque spec.
 3. **Production traces are model behaviors.** `scripts/emit-traces.ts` drives
-   the real store through seven scenarios — one-shot with a digest, crash,
-   timeout, cancel/re-arm fence, pi-crash/reconcile, two monitors, and rate
-   suppression — and `spec/TraceValidation.tla` replays every step.
+   the real store through eight scenarios — one-shot with a digest, crash,
+   timeout, cancel/re-arm fence, pi-crash/reconcile, clear/re-arm, two
+   monitors, and rate suppression — and `spec/TraceValidation.tla` replays
+   every step.
 4. **Spec parity is locked.** `test/spec-parity.spec.ts` checks that the TLA+
    `Next` action list equals the TypeScript alphabet, that every action has a
    guard, and that every invariant name is defined in the spec.

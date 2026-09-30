@@ -8,6 +8,7 @@
  */
 
 import {
+  isEnabled,
   MonitorCommandError,
   reduceMonitorCommand,
   type MonitorCommand,
@@ -15,7 +16,7 @@ import {
 } from "../engine/reducer.ts";
 import { initMonitorState, normalizeMonitorState, type MonitorPolicy, type MonitorState } from "../engine/state.ts";
 import { verifyMonitorState } from "../engine/verify.ts";
-import { MonitorStateError, type MonitorViolation } from "../formal/model.ts";
+import { MonitorStateError, type MonitorId, type MonitorViolation } from "../formal/model.ts";
 
 /** Where snapshots go. `pi.appendEntry` in production, an array in tests. */
 export interface MonitorPersistence {
@@ -136,6 +137,16 @@ export class MonitorStore {
 
   public piCrash(): MonitorReduceResult {
     return this.apply({ type: "pi-crash" });
+  }
+
+  /** The verified `clear` transition: enabled only for a disarmed, quiescent monitor. */
+  public canClear(monitor: MonitorId): boolean {
+    return isEnabled(this.#state, { type: "clear", monitor }, this.#policy);
+  }
+
+  /** Forget a finished monitor; refuses when the verified guard is not enabled. */
+  public clear(monitor: MonitorId): MonitorReduceResult {
+    return this.apply({ type: "clear", monitor });
   }
 
   /** Replace the durable state, e.g. when restoring a recovered snapshot. */

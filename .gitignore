@@ -11,5 +11,5 @@ spec/*_TTrace_*.tla
 spec/*_TTrace_*.bin
 
 # TLAPS proof cache
-spec/.tlacache/
+.tlacache/
 spec/*.thy

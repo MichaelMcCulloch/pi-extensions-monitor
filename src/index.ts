@@ -6,8 +6,9 @@
  * the reducer is `referenceReduceMonitorState`, the mirror of
  * `spec/MonitorSystem.tla`.
  *
- * Armed monitors are also shown persistently above the editor, and `/monitor`
- * opens an inspector with counters and a tail of each log file.
+ * Active monitors are also shown persistently above the editor (finished ones
+ * are counted only), and `/monitor` opens an inspector with counters and a tail
+ * of each log file for active and finished monitors alike.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -19,7 +20,7 @@ import { MonitorRuntime } from "./extension/runtime.ts";
 import { MonitorStore, type MonitorPersistence } from "./extension/store.ts";
 import { MonitorSupervisor } from "./extension/supervisor.ts";
 import { buildMonitorTool } from "./extension/tool.ts";
-import { MonitorExplorer, MonitorWidget, isMonitorEmpty, renderMonitorDetail, renderMonitorWidget } from "./extension/hud.ts";
+import { MonitorExplorer, MonitorWidget, hasActiveMonitors, renderMonitorDetail, renderMonitorWidget } from "./extension/hud.ts";
 
 /** The custom-entry type that carries the complete snapshot. */
 export const MONITOR_STATE_ENTRY = "monitor/state";
@@ -63,7 +64,7 @@ export default function monitorExtension(pi: ExtensionAPI): void {
     const ctx = currentCtx;
     if (ctx === null || current === null) return;
     if (ctx.mode !== "tui" || !ctx.hasUI) return;
-    if (isMonitorEmpty(current.store.state)) {
+    if (!hasActiveMonitors(current.store.state)) {
       hideWidget();
       return;
     }
@@ -159,7 +160,7 @@ export default function monitorExtension(pi: ExtensionAPI): void {
   };
 
   pi.registerCommand("monitor", {
-    description: "Show the armed monitors; open the scrollable inspector",
+    description: "Open the monitor inspector: active monitors first, then finished ones",
     handler: async (_args, ctx) => {
       if (ctx.mode !== "tui" || !ctx.hasUI) {
         ctx.ui.notify(renderBoard(ensure(ctx).store.state), "info");

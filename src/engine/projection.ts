@@ -5,7 +5,7 @@
  */
 
 import type { AbstractMonitorState, MonitorId, Terminal } from "../formal/model.ts";
-import type { MonitorState } from "./state.ts";
+import { isLiveMonitor, type MonitorState } from "./state.ts";
 
 const GLYPH: Readonly<Record<"absent" | "armed" | "running" | "disarmed", string>> = {
   absent: "·",
@@ -45,14 +45,15 @@ export function lifecycleLabel(abstract: AbstractMonitorState, monitor: MonitorI
   return `${suffix} (gen ${gen})`;
 }
 
-/** Render the board: a total function of the durable state. */
+/** Render the board: a total function of the durable state. Active monitors come first. */
 export function renderBoard(state: MonitorState): string {
   const monitors = [...Object.keys(state.specs)].sort();
   if (monitors.length === 0) return "monitor: no monitors armed";
   const abstract = state as unknown as AbstractMonitorState;
-  const running = monitors.filter((monitor) => (abstract.status[monitor] ?? "absent") === "running").length;
-  const lines = [`monitor: ${monitors.length} total · ${running} running`];
-  for (const monitor of monitors) {
+  const active = monitors.filter((monitor) => isLiveMonitor(state, monitor));
+  const finished = monitors.filter((monitor) => !isLiveMonitor(state, monitor));
+  const lines = [`monitor: ${active.length} active · ${finished.length} finished`];
+  for (const monitor of [...active, ...finished]) {
     const spec = state.specs[monitor]!;
     const queued = abstract.queued[monitor] ?? 0;
     const pending = abstract.alertPending[monitor] ? " · notice pending" : "";
@@ -60,5 +61,6 @@ export function renderBoard(state: MonitorState): string {
     lines.push(`      ${spec.script}`);
     lines.push(`      log: ${spec.logPath}`);
   }
+  if (finished.length > 0) lines.push("  clear finished with: monitor action=clear");
   return lines.join("\n");
 }

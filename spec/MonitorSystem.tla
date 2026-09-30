@@ -42,6 +42,7 @@
 \*   Cancel(m)       the agent stopped it; fence the old effect
 \*   EffectStale(m)  a killed generation reports back and is dropped
 \*   Reconcile(m)    a restored running monitor had no process
+\*   Clear(m)        forget a disarmed, quiescent monitor (reset to absent)
 \*   PiCrash         every process-local effect is lost at once
 \*
 \* The executable mirror is `src/formal/model.ts`; `test/model.spec.ts` asserts
@@ -138,6 +139,14 @@ GuardEffectStale(m) ==
 GuardReconcile(m) ==
     /\ status[m] = "running"
     /\ effect[m] = "idle"
+
+GuardClear(m) ==
+    /\ status[m] = "disarmed"
+    /\ effect[m] = "idle"
+    /\ queued[m] = 0
+    /\ suppressed[m] = 0
+    /\ ~digestDue[m]
+    /\ ~alertPending[m]
 
 \* ---------------------------------------------------------------------------
 \* Actions
@@ -262,6 +271,28 @@ Reconcile(m) ==
     /\ UNCHANGED << gen, effect, effectFence, produced, delivered, queued,
                     windowAdmitted, suppressed, digested, digestDue, alertSent >>
 
+\* Forget a finished monitor: every per-monitor variable returns to its initial
+\* value, so the record is indistinguishable from one that was never armed. The
+\* guard requires nothing to be owed (no queue, no digest, no notice) and no
+\* effect left, because removal erases the generation fence that would keep a
+\* stale process from writing into a re-armed generation.
+Clear(m) ==
+    /\ GuardClear(m)
+    /\ status'         = [status EXCEPT ![m] = "absent"]
+    /\ gen'            = [gen EXCEPT ![m] = 0]
+    /\ effect'         = [effect EXCEPT ![m] = "idle"]
+    /\ effectFence'    = [effectFence EXCEPT ![m] = 0]
+    /\ terminal'       = [terminal EXCEPT ![m] = "none"]
+    /\ produced'       = [produced EXCEPT ![m] = 0]
+    /\ delivered'      = [delivered EXCEPT ![m] = 0]
+    /\ queued'         = [queued EXCEPT ![m] = 0]
+    /\ windowAdmitted' = [windowAdmitted EXCEPT ![m] = 0]
+    /\ suppressed'     = [suppressed EXCEPT ![m] = 0]
+    /\ digested'       = [digested EXCEPT ![m] = 0]
+    /\ digestDue'      = [digestDue EXCEPT ![m] = FALSE]
+    /\ alertPending'   = [alertPending EXCEPT ![m] = FALSE]
+    /\ alertSent'      = [alertSent EXCEPT ![m] = FALSE]
+
 PiCrash ==
     /\ effect' = [m \in Monitors |-> "idle"]
     /\ UNCHANGED << status, gen, effectFence, terminal, produced, delivered,
@@ -274,6 +305,7 @@ Next ==
          \/ Arm(m) \/ Admit(m) \/ Emit(m) \/ Deliver(m) \/ EndWindow(m)
          \/ Digest(m) \/ DeliverAlert(m) \/ Exit(m) \/ Crash(m)
          \/ Timeout(m) \/ Cancel(m) \/ EffectStale(m) \/ Reconcile(m)
+         \/ Clear(m)
 
 \* Fairness: the consumer drains, the window rolls, digests and alerts land,
 \* a lost effect is reconciled, and a live effect eventually settles. The one

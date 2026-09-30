@@ -12,7 +12,13 @@
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { MonitorSpecRecord } from "../engine/state.ts";
+import {
+  isLiveMonitor,
+  knownMonitorIds,
+  monitorIds,
+  type MonitorSpecRecord,
+} from "../engine/state.ts";
+import type { MonitorId } from "../formal/model.ts";
 import { monitorPrefix, MONITOR_LINE_CHANNEL, type OutgoingMessage } from "./injector.ts";
 import type { MonitorInjector } from "./injector.ts";
 import type { MonitorStore } from "./store.ts";
@@ -32,6 +38,12 @@ export interface ArmInput {
   readonly script: string;
   readonly cwd: string;
   readonly timeoutMs?: number | null;
+}
+
+/** The result of a clear: what was forgotten and what had to stay. */
+export interface ClearOutcome {
+  readonly cleared: readonly MonitorId[];
+  readonly kept: readonly MonitorId[];
 }
 
 /** A refusal carrying a stable code. */
@@ -98,12 +110,50 @@ export class MonitorRuntime {
     if (spec === undefined) throw new MonitorRuntimeError("monitor-unknown", `unknown monitor "${name}"`);
     const status = this.#options.store.state.status[name] ?? "absent";
     if (status !== "armed" && status !== "running") {
+      if (status === "disarmed") {
+        throw new MonitorRuntimeError(
+          "monitor-not-running",
+          `monitor "${name}" has already finished; use monitor action=clear to forget it`,
+        );
+      }
       throw new MonitorRuntimeError("monitor-not-running", `monitor "${name}" is not running`);
     }
     this.#options.store.cancel(name);
     this.#options.supervisor.kill(name);
     this.#options.injector.flushAll();
     return spec;
+  }
+
+  /**
+   * Forget finished monitors using the verified `clear` transition. With a
+   * name, only that finished monitor; without, every monitor whose guard is
+   * enabled. Running monitors are never touched; log files are left on disk.
+   */
+  public clear(name?: string): ClearOutcome {
+    const store = this.#options.store;
+    if (name !== undefined) {
+      if (!monitorIds(store.state).includes(name)) {
+        throw new MonitorRuntimeError("monitor-unknown", `unknown monitor "${name}"`);
+      }
+      if (isLiveMonitor(store.state, name)) {
+        throw new MonitorRuntimeError("monitor-clear-active", `monitor "${name}" is still running; cancel it first`);
+      }
+      if (!store.canClear(name)) {
+        throw new MonitorRuntimeError(
+          "monitor-not-settled",
+          `monitor "${name}" still has undelivered output, a pending notice, or a live effect`,
+        );
+      }
+      this.#options.injector.forget(name);
+      store.clear(name);
+      return { cleared: [name], kept: [] };
+    }
+    const known = knownMonitorIds(store.state);
+    const cleared = known.filter((monitor) => store.canClear(monitor));
+    const kept = known.filter((monitor) => !store.canClear(monitor));
+    for (const monitor of cleared) this.#options.injector.forget(monitor);
+    for (const monitor of cleared) store.clear(monitor);
+    return { cleared, kept };
   }
 
   /** Flush delivery at a settle boundary. */

@@ -10,22 +10,24 @@ import { closeSync, openSync, readSync, statSync } from "node:fs";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component, type TUI, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { glyph, lifecycleLabel } from "../engine/projection.ts";
-import type { MonitorState } from "../engine/state.ts";
+import { activeMonitorIds, finishedMonitorIds, type MonitorState } from "../engine/state.ts";
 
-/** True when no monitor has ever been armed. */
-export function isMonitorEmpty(state: MonitorState): boolean {
-  return Object.keys(state.specs).length === 0;
+/** True when at least one monitor is still armed or running. */
+export function hasActiveMonitors(state: MonitorState): boolean {
+  return activeMonitorIds(state).length > 0;
 }
 
-/** The persistent widget: a header and one 📟 name per monitor. Click to inspect. */
+/**
+ * The persistent widget: a header and one 📟 name per active monitor. Finished
+ * monitors are only counted, never listed; the inspector shows them until the
+ * agent clears them.
+ */
 export function renderMonitorWidget(state: MonitorState): string[] {
-  const monitors = [...Object.keys(state.specs)].sort();
-  if (monitors.length === 0) return [];
-  const abstract = state as unknown as MonitorState;
-  const running = monitors.filter((monitor) => (abstract.status[monitor] ?? "absent") === "running").length;
-  const lines = [`monitor: ${monitors.length} total · ${running} running`];
-  for (const monitor of monitors) lines.push(`📟 ${monitor}`);
-  return lines;
+  const active = activeMonitorIds(state);
+  if (active.length === 0) return [];
+  const finished = finishedMonitorIds(state).length;
+  const header = finished === 0 ? `monitor: ${active.length} active` : `monitor: ${active.length} active · ${finished} finished`;
+  return [header, ...active.map((monitor) => `📟 ${monitor}`)];
 }
 
 /** Read the last `maxLines` lines of a file, bounded by `maxBytes`. */
@@ -51,29 +53,43 @@ export function readLogTail(path: string, maxLines: number, maxBytes = 8_192): s
   }
 }
 
-/** The full inspector body: lifecycle, counters, script, and a log tail. */
-export function renderMonitorDetail(state: MonitorState, width: number): string[] {
-  const monitors = [...Object.keys(state.specs)].sort();
+/** One inspector block: lifecycle, counters, script, cwd, log, and a log tail. */
+function monitorBlock(state: MonitorState, monitor: string, wrap: number): string[] {
   const abstract = state as unknown as MonitorState;
-  const wrap = Math.max(20, width - 4);
-  if (monitors.length === 0) return ["no monitors armed — use the monitor tool to arm one"];
+  const spec = state.specs[monitor]!;
   const lines: string[] = [];
-  for (const monitor of monitors) {
-    const spec = state.specs[monitor]!;
-    lines.push(`${glyph(abstract, monitor)} ${monitor}  [${lifecycleLabel(abstract, monitor, spec.timeoutMs)}]`);
-    lines.push(
-      `    queued ${abstract.queued[monitor] ?? 0} · produced ${abstract.produced[monitor] ?? 0} · delivered ${abstract.delivered[monitor] ?? 0} · suppressed ${abstract.suppressed[monitor] ?? 0}`,
-    );
-    for (const wrapped of wrapTextWithAnsi(`script: ${spec.script}`, wrap)) lines.push(`    ${wrapped}`);
-    lines.push(`    cwd: ${spec.cwd}`);
-    lines.push(`    log: ${spec.logPath}`);
-    if (spec.endedAt !== null) lines.push(`    ended: ${new Date(spec.endedAt).toISOString()}${spec.exitCode === null ? "" : ` · exit ${spec.exitCode}`}`);
-    const tail = readLogTail(spec.logPath, 12);
-    if (tail.length > 0) {
-      lines.push("    tail:");
-      for (const line of tail) lines.push(`      ${line}`);
-    }
-    lines.push("");
+  lines.push(`${glyph(abstract, monitor)} ${monitor}  [${lifecycleLabel(abstract, monitor, spec.timeoutMs)}]`);
+  lines.push(
+    `    queued ${abstract.queued[monitor] ?? 0} · produced ${abstract.produced[monitor] ?? 0} · delivered ${abstract.delivered[monitor] ?? 0} · suppressed ${abstract.suppressed[monitor] ?? 0}`,
+  );
+  for (const wrapped of wrapTextWithAnsi(`script: ${spec.script}`, wrap)) lines.push(`    ${wrapped}`);
+  lines.push(`    cwd: ${spec.cwd}`);
+  lines.push(`    log: ${spec.logPath}`);
+  if (spec.endedAt !== null) lines.push(`    ended: ${new Date(spec.endedAt).toISOString()}${spec.exitCode === null ? "" : ` · exit ${spec.exitCode}`}`);
+  const tail = readLogTail(spec.logPath, 12);
+  if (tail.length > 0) {
+    lines.push("    tail:");
+    for (const line of tail) lines.push(`      ${line}`);
+  }
+  lines.push("");
+  return lines;
+}
+
+/** The full inspector body: active monitors first, then the finished archive. */
+export function renderMonitorDetail(state: MonitorState, width: number): string[] {
+  const active = activeMonitorIds(state);
+  const finished = finishedMonitorIds(state);
+  if (active.length === 0 && finished.length === 0) return ["no monitors armed — use the monitor tool to arm one"];
+  const wrap = Math.max(20, width - 4);
+  const lines: string[] = [];
+  if (active.length > 0) {
+    lines.push(`active (${active.length})`);
+    for (const monitor of active) lines.push(...monitorBlock(state, monitor, wrap));
+  }
+  if (finished.length > 0) {
+    if (active.length > 0) lines.push("");
+    lines.push(`finished (${finished.length}) — clear with monitor action=clear`);
+    for (const monitor of finished) lines.push(...monitorBlock(state, monitor, wrap));
   }
   return lines;
 }

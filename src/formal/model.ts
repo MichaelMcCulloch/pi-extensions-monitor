@@ -77,6 +77,7 @@ export type MonitorEvent =
   | { readonly type: "cancel"; readonly monitor: MonitorId }
   | { readonly type: "effect-stale"; readonly monitor: MonitorId }
   | { readonly type: "reconcile"; readonly monitor: MonitorId }
+  | { readonly type: "clear"; readonly monitor: MonitorId }
   | { readonly type: "pi-crash" };
 
 export type MonitorAction = MonitorEvent["type"];
@@ -96,6 +97,7 @@ export const MONITOR_ACTIONS: readonly MonitorAction[] = [
   "cancel",
   "effect-stale",
   "reconcile",
+  "clear",
   "pi-crash",
 ];
 
@@ -200,6 +202,14 @@ export const guards = {
 
   reconcile: (state: AbstractMonitorState, monitor: MonitorId): boolean =>
     state.status[monitor] === "running" && state.effect[monitor] === "idle",
+
+  clear: (state: AbstractMonitorState, monitor: MonitorId): boolean =>
+    state.status[monitor] === "disarmed" &&
+    state.effect[monitor] === "idle" &&
+    (state.queued[monitor] ?? 0) === 0 &&
+    (state.suppressed[monitor] ?? 0) === 0 &&
+    state.digestDue[monitor] !== true &&
+    state.alertPending[monitor] !== true,
 } as const;
 
 /** Apply one event to the abstract model. */
@@ -327,6 +337,26 @@ export function referenceReduceMonitorState(
         alertPending: set(state.alertPending, m, true),
       };
     }
+    case "clear": {
+      require(guards.clear(state, m), "clear-not-enabled", m);
+      return {
+        ...state,
+        status: set(state.status, m, "absent"),
+        gen: set(state.gen, m, 0),
+        effect: set(state.effect, m, "idle"),
+        effectFence: set(state.effectFence, m, 0),
+        terminal: set(state.terminal, m, "none"),
+        produced: set(state.produced, m, 0),
+        delivered: set(state.delivered, m, 0),
+        queued: set(state.queued, m, 0),
+        windowAdmitted: set(state.windowAdmitted, m, 0),
+        suppressed: set(state.suppressed, m, 0),
+        digested: set(state.digested, m, 0),
+        digestDue: set(state.digestDue, m, false),
+        alertPending: set(state.alertPending, m, false),
+        alertSent: set(state.alertSent, m, false),
+      };
+    }
   }
 }
 
@@ -353,6 +383,7 @@ export function enabledEvents(state: AbstractMonitorState, config: MonitorModelC
     if (guards.cancel(state, config, monitor)) events.push({ type: "cancel", monitor });
     if (guards["effect-stale"](state, monitor)) events.push({ type: "effect-stale", monitor });
     if (guards.reconcile(state, monitor)) events.push({ type: "reconcile", monitor });
+    if (guards.clear(state, monitor)) events.push({ type: "clear", monitor });
   }
   return events;
 }

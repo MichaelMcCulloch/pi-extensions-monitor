@@ -67,6 +67,7 @@ const timeout = (monitor: string): MonitorCommand => ({ type: "timeout", monitor
 const cancel = (monitor: string): MonitorCommand => ({ type: "cancel", monitor });
 const effectStale = (monitor: string): MonitorCommand => ({ type: "effect-stale", monitor });
 const reconcile = (monitor: string): MonitorCommand => ({ type: "reconcile", monitor, detail: "was running when pi exited" });
+const clear = (monitor: string): MonitorCommand => ({ type: "clear", monitor });
 const piCrash: MonitorCommand = { type: "pi-crash" };
 
 /** The scenarios the validator replays, covering every action. */
@@ -91,6 +92,27 @@ export function scenarios(): Scenario[] {
     {
       name: "pi-crash-reconcile",
       commands: [arm("m1", "long"), admit("m1"), piCrash, reconcile("m1"), deliverAlert("m1")],
+    },
+    {
+      name: "clear-and-rearm",
+      commands: [
+        arm("m1", "once"),
+        admit("m1"),
+        emit("m1"),
+        deliver("m1"),
+        exit("m1"),
+        arm("m2", "peer"),
+        admit("m2"),
+        emit("m2"),
+        clear("m1"),
+        arm("m1", "again"),
+        admit("m1"),
+        emit("m1"),
+        deliver("m1"),
+        exit("m1"),
+        deliver("m2"),
+        exit("m2"),
+      ],
     },
     {
       name: "two-monitors-fifo",

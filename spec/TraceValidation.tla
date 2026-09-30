@@ -37,6 +37,7 @@ ActionOf(ev) ==
     \/ (ev.type = "cancel"       /\ Cancel(ev.monitor))
     \/ (ev.type = "effect-stale" /\ EffectStale(ev.monitor))
     \/ (ev.type = "reconcile"    /\ Reconcile(ev.monitor))
+    \/ (ev.type = "clear"        /\ Clear(ev.monitor))
     \/ (ev.type = "pi-crash"     /\ PiCrash)
 
 GuardOf(ev) ==
@@ -53,6 +54,7 @@ GuardOf(ev) ==
     \/ (ev.type = "cancel"       /\ GuardCancel(ev.monitor))
     \/ (ev.type = "effect-stale" /\ GuardEffectStale(ev.monitor))
     \/ (ev.type = "reconcile"    /\ GuardReconcile(ev.monitor))
+    \/ (ev.type = "clear"        /\ GuardClear(ev.monitor))
     \/ (ev.type = "pi-crash"     /\ TRUE)
 
 AssignState(s) ==

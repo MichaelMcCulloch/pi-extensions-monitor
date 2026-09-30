@@ -223,6 +223,23 @@ export function isLiveMonitor(state: MonitorState, monitor: MonitorId): boolean 
   return status === "armed" || status === "running";
 }
 
+/** Every monitor that has a recorded spec, sorted; the universe the UI can show. */
+export function knownMonitorIds(state: MonitorState): MonitorId[] {
+  return Object.keys(state.specs).sort();
+}
+
+/** The monitors still armed or running, sorted. */
+export function activeMonitorIds(state: MonitorState): MonitorId[] {
+  return knownMonitorIds(state).filter((monitor) => isLiveMonitor(state, monitor));
+}
+
+/**
+ * The monitors that have finished (anything not live), sorted.
+ */
+export function finishedMonitorIds(state: MonitorState): MonitorId[] {
+  return knownMonitorIds(state).filter((monitor) => !isLiveMonitor(state, monitor));
+}
+
 export function setSpec(state: MonitorState, spec: MonitorSpecRecord): MonitorState {
   return { ...state, specs: { ...state.specs, [spec.name]: spec } };
 }
@@ -231,4 +248,32 @@ export function updateSpec(state: MonitorState, monitor: MonitorId, patch: Parti
   const current = state.specs[monitor];
   if (current === undefined) return state;
   return { ...state, specs: { ...state.specs, [monitor]: { ...current, ...patch } } };
+}
+
+/** Drop every per-monitor entry for the named monitors; the reducer owns revision. */
+export function removeMonitors(state: MonitorState, names: readonly MonitorId[]): MonitorState {
+  const drop = new Set<MonitorId>(names);
+  const omit = <K extends string, V>(record: Readonly<Record<K, V>>): Record<K, V> => {
+    const out = {} as Record<K, V>;
+    for (const key of Object.keys(record) as K[]) if (!drop.has(key as unknown as MonitorId)) out[key] = record[key]!;
+    return out;
+  };
+  return {
+    status: omit(state.status),
+    gen: omit(state.gen),
+    effect: omit(state.effect),
+    effectFence: omit(state.effectFence),
+    terminal: omit(state.terminal),
+    produced: omit(state.produced),
+    delivered: omit(state.delivered),
+    queued: omit(state.queued),
+    windowAdmitted: omit(state.windowAdmitted),
+    suppressed: omit(state.suppressed),
+    digested: omit(state.digested),
+    digestDue: omit(state.digestDue),
+    alertPending: omit(state.alertPending),
+    alertSent: omit(state.alertSent),
+    specs: omit(state.specs),
+    revision: state.revision,
+  };
 }

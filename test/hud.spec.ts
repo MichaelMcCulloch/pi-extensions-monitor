@@ -3,10 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { initMonitorState } from "../src/engine/state.ts";
-import { MonitorWidget, isMonitorEmpty, readLogTail, renderMonitorDetail, renderMonitorWidget } from "../src/extension/hud.ts";
+import { initMonitorState, type MonitorSpecRecord, type MonitorState } from "../src/engine/state.ts";
+import { MonitorWidget, hasActiveMonitors, readLogTail, renderMonitorDetail, renderMonitorWidget } from "../src/extension/hud.ts";
 
-function withMonitor(logPath: string): ReturnType<typeof initMonitorState> {
+function record(name: string, logPath: string, script = `echo ${name}`): MonitorSpecRecord {
+  return { name, script, cwd: "/tmp", timeoutMs: null, logPath, startedAt: 0, endedAt: null, exitCode: null, signal: null, detail: null };
+}
+
+function withMonitor(logPath: string): MonitorState {
   const state = initMonitorState();
   return {
     ...state,
@@ -16,9 +20,19 @@ function withMonitor(logPath: string): ReturnType<typeof initMonitorState> {
     produced: { ...state.produced, t: 5 },
     delivered: { ...state.delivered, t: 3 },
     suppressed: { ...state.suppressed, t: 1 },
-    specs: {
-      t: { name: "t", script: "echo tick", cwd: "/tmp", timeoutMs: null, logPath, startedAt: 0, endedAt: null, exitCode: null, signal: null, detail: null },
-    },
+    specs: { t: record("t", logPath, "echo tick") },
+  };
+}
+
+/** One running monitor (`t`) and one finished monitor (`f`). */
+function mixedState(logPath: string): MonitorState {
+  const state = initMonitorState();
+  return {
+    ...state,
+    status: { t: "running", f: "disarmed" },
+    gen: { t: 1, f: 1 },
+    terminal: { t: "none", f: "exited" },
+    specs: { t: record("t", logPath, "echo tick"), f: record("f", logPath) },
   };
 }
 
@@ -38,17 +52,32 @@ describe("monitor hud renderers", () => {
   }
 
   it("treats a fresh state as empty and hides the widget", () => {
-    expect(isMonitorEmpty(initMonitorState())).toBe(true);
+    expect(hasActiveMonitors(initMonitorState())).toBe(false);
     expect(renderMonitorWidget(initMonitorState())).toEqual([]);
   });
 
   it("shows only 📟 names in the widget, not the script or log", () => {
     const logPath = logFile(["tick"]);
     const lines = renderMonitorWidget(withMonitor(logPath)).join("\n");
-    expect(lines).toContain("1 total · 1 running");
+    expect(lines).toContain("1 active");
     expect(lines).toContain("📟 t");
     expect(lines).not.toContain("echo tick");
     expect(lines).not.toContain(logPath);
+  });
+
+  it("lists only active monitors in the widget and hides it once they all finish", () => {
+    const logPath = logFile(["tick"]);
+    const mixed = mixedState(logPath);
+    expect(renderMonitorWidget(mixed)).toEqual(["monitor: 1 active · 1 finished", "📟 t"]);
+    expect(hasActiveMonitors(mixed)).toBe(true);
+    expect(hasActiveMonitors(initMonitorState())).toBe(false);
+    expect(renderMonitorWidget({ ...mixed, status: { t: "disarmed", f: "disarmed" } })).toEqual([]);
+  });
+
+  it("groups active and finished monitors in the inspector", () => {
+    const detail = renderMonitorDetail(mixedState(logFile(["tick"])), 80).join("\n");
+    expect(detail).toContain("active (1)");
+    expect(detail).toContain("finished (1) — clear with monitor action=clear");
   });
 
   it("includes counters and a log tail in the inspector", () => {

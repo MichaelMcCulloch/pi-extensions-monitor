@@ -20,6 +20,7 @@ import {
   mergeAbstract,
   monitorIds,
   monitorModelConfig,
+  removeMonitors,
   setSpec,
   updateSpec,
   type MonitorPolicy,
@@ -41,6 +42,7 @@ export type MonitorCommand =
   | { readonly type: "cancel"; readonly monitor: string }
   | { readonly type: "effect-stale"; readonly monitor: string }
   | { readonly type: "reconcile"; readonly monitor: string; readonly detail: string }
+  | { readonly type: "clear"; readonly monitor: string }
   | { readonly type: "pi-crash" };
 
 /** The result of one accepted command. */
@@ -103,6 +105,8 @@ export function isEnabled(state: MonitorState, event: MonitorEvent, policy: Moni
       return modelGuards["effect-stale"](abstract, event.monitor);
     case "reconcile":
       return modelGuards.reconcile(abstract, event.monitor);
+    case "clear":
+      return modelGuards.clear(abstract, event.monitor);
     case "pi-crash":
       return true;
   }
@@ -168,6 +172,12 @@ export function reduceMonitorCommand(state: MonitorState, command: MonitorComman
       break;
     case "reconcile":
       next = updateSpec(next, command.monitor, { endedAt: now, detail: command.detail });
+      break;
+    case "clear":
+      // The abstract state reset to absent; the opaque spec is dropped so the
+      // board stops listing the monitor. Undefined fields read as the same
+      // defaults the model just installed.
+      next = removeMonitors(next, [command.monitor]);
       break;
     default:
       break;

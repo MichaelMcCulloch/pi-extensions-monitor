@@ -17,6 +17,7 @@ const TLA_NAME: Record<string, string> = {
   cancel: "Cancel",
   "effect-stale": "EffectStale",
   reconcile: "Reconcile",
+  clear: "Clear",
   "pi-crash": "PiCrash",
 };
 
@@ -34,6 +35,7 @@ const GUARD_NAME: Record<string, string> = {
   cancel: "GuardCancel",
   "effect-stale": "GuardEffectStale",
   reconcile: "GuardReconcile",
+  clear: "GuardClear",
 };
 
 function read(name: string): string {

@@ -51,6 +51,26 @@ describe("monitor extension", () => {
     fake.lifecycle("session_shutdown");
   });
 
+  it("clears finished monitors but never a running one", async () => {
+    const fake = boot();
+    await runTool(fake, { action: "arm", name: "oneshot", script: "echo done" });
+    await until(
+      () => (fake.entries.at(-1)?.data as { status?: Record<string, string> } | undefined)?.status?.["oneshot"] === "disarmed",
+      4000,
+    );
+    await expect(runTool(fake, { action: "cancel", name: "oneshot" })).rejects.toThrow(/action=clear/);
+    await runTool(fake, { action: "arm", name: "forever", script: "sleep 5" });
+    const cleared = await runTool(fake, { action: "clear" });
+    expect(cleared.content[0]!.text).toContain("cleared 1 monitor(s): oneshot");
+    expect(cleared.content[0]!.text).toContain("kept 1 still active or settling: forever");
+    const snapshot = fake.entries.at(-1)!.data as { specs: Record<string, unknown> };
+    expect(snapshot.specs["oneshot"]).toBeUndefined();
+    expect(snapshot.specs["forever"]).toBeDefined();
+    await expect(runTool(fake, { action: "clear", name: "forever" })).rejects.toThrow(/monitor-clear-active/);
+    await runTool(fake, { action: "cancel", name: "forever" });
+    fake.lifecycle("session_shutdown");
+  });
+
   it("surfaces a refusal as a thrown tool error so the agent sees the fault", async () => {
     const fake = boot();
     // Returning the refusal as content would be recorded as a successful call

@@ -100,6 +100,10 @@ export class MonitorInjector {
   }
 
   #onLine(event: LineEvent): void {
+    // A line from a dead or already-forgotten child must not reach the ledger:
+    // after `clear` the monitor has no fence left to attribute it to.
+    const status = this.#options.store.state.status[event.name];
+    if (status !== "armed" && status !== "running") return;
     const result = this.#options.store.emit(event.name);
     if (result.admitted === true) {
       const pending = this.#pending.get(event.name) ?? [];

@@ -6,8 +6,15 @@
  *
  * Proves `Spec => []CoreInv` for EVERY value of the constants -- the
  * parameterized MonitorSystem, not the TLC fixture. `spec/MonitorSystemProof.tla`
- * establishes `Init => CoreInv` and that each action preserves CoreInv; `PTL`
- * turns that into `[]CoreInv`.
+ * establishes `Init => InductiveInv` and that each action preserves
+ * `InductiveInv == CoreInv /\ ArmedHasNoTerminal`; `PTL` turns that into
+ * `[]CoreInv`.
+ *
+ * The driver passes `--debug oldsmt`: TLAPS's default SMT(v3) encoding leaves
+ * some definitional preservation goals as quantified formulas the solvers
+ * return `unknown` on, while the v2 encoding discharges them. The proof is
+ * checked with Z3 4.16; the 4.8.9 bundled in the TLAPS 1.6.0-pre tarball does
+ * not close every obligation.
  *
  * tlapm is not installed by default. TLAPS needs a Z3 on `PATH`; install
  * tlapm 1.6+ from https://github.com/tlaplus/tlapm/releases, or set TLAPM and
@@ -56,6 +63,10 @@ function main() {
   const stdlib = findStdlib(tlapm);
   const args = [];
   if (stdlib) args.push("-I", stdlib);
+  // The proof's definitional preservation obligations are discharged by the
+  // v2 SMT encoding; the default v3 encoding leaves quantified function/UPDATE
+  // goals that the bundled solvers return `unknown` on.
+  args.push("--debug", "oldsmt");
   args.push(PROOF);
 
   process.stdout.write(`\n$ (cd spec && ${tlapm} ${args.join(" ")})\n`);

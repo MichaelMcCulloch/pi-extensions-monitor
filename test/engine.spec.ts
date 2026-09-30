@@ -80,4 +80,26 @@ describe("monitor engine", () => {
     const store = armed();
     expect(() => store.cancel("nope")).toThrowError(/monitor-transition-refused/);
   });
+
+  it("clears a finished monitor only when the verified clear guard is enabled", () => {
+    const store = armed("echo x");
+    store.admit("m1");
+    store.emit("m1");
+    expect(store.canClear("m1")).toBe(false); // running
+    store.cancel("m1");
+    expect(store.canClear("m1")).toBe(false); // stale effect
+    store.effectStale("m1");
+    expect(store.canClear("m1")).toBe(false); // queued line
+    store.deliver("m1");
+    expect(store.canClear("m1")).toBe(true);
+    store.clear("m1");
+    expect(store.state.specs["m1"]).toBeUndefined();
+    expect(store.state.status["m1"]).toBeUndefined();
+    expect(store.state.gen["m1"]).toBeUndefined();
+    expect(store.violations()).toEqual([]);
+    // A cleared monitor is indistinguishable from one never armed: re-arm works.
+    store.arm({ monitor: "m1", script: "again", cwd: "/tmp", timeoutMs: null, logPath: "/tmp/pi-monitor-m1d.log" });
+    expect(store.state.status["m1"]).toBe("armed");
+    expect(store.violations()).toEqual([]);
+  });
 });
