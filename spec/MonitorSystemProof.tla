@@ -29,7 +29,7 @@ InductiveInv == CoreInv /\ ArmedHasNoTerminal
 
 THEOREM SafetyCore ==
   ASSUME Rate \in Nat, Cap \in Nat, MaxGen \in Nat, MaxEmitted \in Nat
-  PROVE Spec => []CoreInv
+  PROVE SafetySpec => []CoreInv
 
   <1>1. Init => InductiveInv
     BY SMT DEF CoreInv, ArmedHasNoTerminal, Statuses, Effects, Terminals, AlertTerminals,
@@ -253,6 +253,6 @@ THEOREM SafetyCore ==
              <2>11, <2>12, <2>13, <2>14, <2>15, <2>16 DEF Next, vars
 
   <1>3. QED
-    BY <1>1, <1>2, PTL DEF Spec, InductiveInv
+    BY <1>1, <1>2, PTL DEF SafetySpec, InductiveInv
 
 =============================================================================

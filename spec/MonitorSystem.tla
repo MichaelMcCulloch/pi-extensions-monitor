@@ -318,6 +318,8 @@ AlertAny == \E m \in Monitors : DeliverAlert(m)
 SettleAny == \E m \in Monitors : Exit(m) \/ Crash(m) \/ Timeout(m)
 ReconcileAny == \E m \in Monitors : Reconcile(m)
 
+SafetySpec == Init /\ [][Next]_vars
+
 Spec ==
     Init /\ [][Next]_vars
     /\ WF_vars(DeliverAny)

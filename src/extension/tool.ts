@@ -35,6 +35,7 @@ interface MonitorDetails {
 
 export function buildMonitorTool(getRuntime: (ctx: ExtensionContext) => MonitorRuntime): ToolDefinition<typeof MonitorParams, MonitorDetails> {
   return {
+    namespace: { name: "monitor", description: "Supervised background scripts and bounded notifications" },
     name: "monitor",
     label: "Monitor",
     description:
