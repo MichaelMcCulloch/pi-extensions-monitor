@@ -6,10 +6,8 @@
 \* counters. Nothing here re-derives lifecycle state from the log or the text;
 \* the log path and the echoed payload are opaque and never appear in a guard.
 \*
-\* This module adds the definitional accounting law and notice completeness to
-\* `CoreInv`. They are checked by TLC over every reachable state. It is a
-\* separate module to keep `MonitorSystem.tla` free of any derived operator the
-\* inductive proof would have to unfold.
+\* This module adds accounting and notice properties to CoreInv. SafetyViews
+\* in MonitorSystemProof proves them inductively; TLC checks the fixture too.
 \* -------------------------------------------------------------------------
 
 EXTENDS MonitorSystem, TLC

@@ -46,6 +46,7 @@ describe("monitor extension", () => {
     await runTool(fake, { action: "arm", name: "listed", script: "sleep 5" });
     const listed = await runTool(fake, { action: "list" });
     expect(listed.content[0]!.text).toContain("listed");
+    expect(listed.structuredContent).toMatchObject({action:"list",monitors:[expect.objectContaining({name:"listed",status:"running",generation:1})]});
     expect(listed.content[0]!.text).toContain("/tmp/pi-monitor-");
     await runTool(fake, { action: "cancel", name: "listed" });
     fake.lifecycle("session_shutdown");

@@ -138,11 +138,11 @@ the check covers every window schedule.
 
 ### What TLAPS proves
 
-`spec/MonitorSystemProof.tla` states `THEOREM SafetyCore == Spec => []CoreInv`
+`spec/MonitorSystemProof.tla` states `SafetyCore == SafetySpec => []CoreInv`
 for **arbitrary** constants. The route is an inductive strengthening:
 `InductiveInv == CoreInv /\ ArmedHasNoTerminal` is shown to hold initially
 and to be preserved by every action of `Next`, and `PTL` lifts that to
-`[]CoreInv`. The proof is **machine-checked**: 104 obligations, all discharged
+`[]CoreInv`. The proof is **machine-checked**: 120 obligations, all discharged
 by `tlapm` 1.6.0-pre and Z3 (`pnpm verify:proof`). One environment note is baked
 into `scripts/tlapm.mjs`: TLAPS's default SMT(v3) encoding leaves some
 definitional preservation goals as quantified formulas the solvers return
@@ -151,8 +151,9 @@ proof is checked with Z3 4.16; the Z3 4.8.9 bundled in the TLAPS 1.6.0-pre
 tarball does not close every obligation, so point TLAPS's backend at a 4.16
 binary (e.g. a wrapper at `<tlapm>/lib/tlapm/backends/bin/z3`).
 
-The TLC result above covers the fixture; this proof covers every value of the
-constants.
+`SafetyViews` additionally establishes `[]ViewInv`, including accounting and
+notice soundness. The inductive safety specification requires no fairness.
+The TLC result covers the fixture; the proofs quantify over all stated constants.
 
 ### How the proof reaches the implementation
 
@@ -229,3 +230,10 @@ filesystem logging, pi's turn scheduling and `sendCustomMessage`, and
 session-log durability. The model is safe for every sequence of their outcomes.
 The one user-facing limitation is that a monitor cannot interrupt a running
 tool: the steer is delivered at the next turn boundary.
+
+### Pi 1.0 programmatic results
+
+Targets pi 1.0.0 with host SDK packages in peer dependencies. Public tools declare
+an output schema and return structured JSON to codemode while preserving their
+human-readable results. Mutating calls remain sequential and domain refusals
+remain errors. Widgets and overlays use the host TUI APIs, including fullscreen.

@@ -17,7 +17,7 @@
 \*   tlapm -I "$HOME/.local/tlapm/lib/tlapm/stdlib" --debug oldsmt MonitorSystemProof.tla
 \* ---------------------------------------------------------------------
 
-EXTENDS MonitorSystem, TLAPS
+EXTENDS MonitorView, TLAPS
 
 \* Admit needs this fact to establish RunningHasNoTerminal; Cancel needs it
 \* to rule out an outstanding or sent alert while armed. It is established by
@@ -254,5 +254,20 @@ THEOREM SafetyCore ==
 
   <1>3. QED
     BY <1>1, <1>2, PTL DEF SafetySpec, InductiveInv
+
+THEOREM NoticeInit == Init => NoticeComplete
+  BY SMT DEF Init, NoticeComplete, Alertable, AlertTerminals
+THEOREM NoticeStep ==
+  ASSUME Rate \in Nat, Cap \in Nat, MaxGen \in Nat, MaxEmitted \in Nat
+  PROVE CoreInv /\ NoticeComplete /\ [Next]_vars => NoticeComplete'
+  BY SMT DEF CoreInv, TypeOK, Statuses, Effects, Terminals, NoticeComplete, Alertable, AlertTerminals, Next, vars,
+    Arm, Admit, Emit, Deliver, EndWindow, Digest, DeliverAlert, Exit, Crash, Timeout,
+    Cancel, EffectStale, Reconcile, Clear, PiCrash
+THEOREM SafetyViews ==
+  ASSUME Rate \in Nat, Cap \in Nat, MaxGen \in Nat, MaxEmitted \in Nat
+  PROVE SafetySpec => []ViewInv
+  <1>1. SafetySpec => []NoticeComplete BY SafetyCore, NoticeInit, NoticeStep, PTL DEF SafetySpec
+  <1>2. CoreInv => AccountingLaw BY Isa DEF CoreInv, NoSilentLoss, AccountingLaw, Accounted
+  <1>3. QED BY SafetyCore, <1>1, <1>2, PTL DEF ViewInv
 
 =============================================================================

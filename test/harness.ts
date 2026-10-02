@@ -3,6 +3,7 @@
  * processes. Only the surface the monitor extension touches is implemented.
  */
 
+import { Check } from 'typebox/value';
 import { EventEmitter } from "node:events";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import monitorExtension from "../src/index.ts";
@@ -94,10 +95,12 @@ export function boot(): FakePi {
   return fake;
 }
 
-export async function runTool(fake: FakePi, params: Record<string, unknown>): Promise<{ content: Array<{ text: string }>; details: Record<string, unknown> }> {
+export async function runTool(fake: FakePi, params: Record<string, unknown>): Promise<{ content: Array<{ text: string }>; details: Record<string, unknown>; structuredContent?: Record<string,unknown> }> {
   const tool = fake.tools.get("monitor");
   if (tool === undefined) throw new Error("monitor tool is not registered");
-  return tool.execute("call", params, undefined, undefined, fake.ctx);
+  const result=await tool.execute("call", params, undefined, undefined, fake.ctx);
+  if (!Check(tool.outputSchema,result.structuredContent)) throw new Error("monitor structured output violates its schema");
+  return result;
 }
 
 export function sleep(ms: number): Promise<void> {

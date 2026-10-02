@@ -31,10 +31,11 @@ interface MonitorDetails {
   readonly cleared?: readonly string[];
   readonly kept?: readonly string[];
   readonly board: string;
+  readonly monitors: readonly unknown[];
 }
 
 export function buildMonitorTool(getRuntime: (ctx: ExtensionContext) => MonitorRuntime): ToolDefinition<typeof MonitorParams, MonitorDetails> {
-  return {
+  const tool: ToolDefinition<typeof MonitorParams, MonitorDetails> = {
     namespace: { name: "monitor", description: "Supervised background scripts and bounded notifications" },
     name: "monitor",
     label: "Monitor",
@@ -53,16 +54,20 @@ export function buildMonitorTool(getRuntime: (ctx: ExtensionContext) => MonitorR
     async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<{ content: { type: "text"; text: string }[]; details: MonitorDetails }> {
       const runtime = getRuntime(ctx);
       const board = (): string => renderBoard(runtime.store.state);
+      const monitors = () => {
+        const state=runtime.store.state;
+        return Object.keys(state.specs).sort().map(name => ({name,generation:state.gen[name],status:state.status[name],terminal:state.terminal[name],queued:state.queued[name],noticePending:state.alertPending[name]}));
+      };
       try {
         if (params.action === "list" || params.action === "status") {
-          return { content: [{ type: "text", text: board() }], details: { action: params.action, board: board() } };
+          return { content: [{ type: "text", text: board() }], details: { action: params.action, board: board(), monitors: monitors() } };
         }
         if (params.action === "cancel") {
           if (params.name === undefined) throw new MonitorRuntimeError("monitor-missing-name", "cancel requires name");
           const spec = runtime.cancel(params.name);
           return {
             content: [{ type: "text", text: `monitor "${spec.name}" cancelled\n${board()}` }],
-            details: { action: "cancel", name: spec.name, logPath: spec.logPath, board: board() },
+            details: { action: "cancel", name: spec.name, logPath: spec.logPath, board: board(), monitors: monitors() },
           };
         }
         if (params.action === "clear") {
@@ -77,7 +82,7 @@ export function buildMonitorTool(getRuntime: (ctx: ExtensionContext) => MonitorR
           }
           return {
             content: [{ type: "text", text: `${parts.join("\n")}\n${board()}` }],
-            details: { action: "clear", cleared: outcome.cleared, kept: outcome.kept, board: board() },
+            details: { action: "clear", cleared: outcome.cleared, kept: outcome.kept, board: board(), monitors: monitors() },
           };
         }
         if (params.name === undefined) throw new MonitorRuntimeError("monitor-missing-name", "arm requires name");
@@ -95,14 +100,11 @@ export function buildMonitorTool(getRuntime: (ctx: ExtensionContext) => MonitorR
               text: `monitor "${spec.name}" armed\nfull log: ${spec.logPath}\n${board()}`,
             },
           ],
-          details: { action: "arm", name: spec.name, logPath: spec.logPath, board: board() },
+          details: { action: "arm", name: spec.name, logPath: spec.logPath, board: board(), monitors: monitors() },
         };
       } catch (error) {
         if (error instanceof MonitorRuntimeError) {
-          // The agent runtime only marks a tool result as an error when
-          // `execute` throws; a refusal returned as ordinary content is
-          // reported to the model as success. Rethrow with the action and the
-          // stable code so the failure is visible and actionable.
+          // Throw refusals so model and codemode callers receive a failure.
           throw new MonitorRuntimeError(
             error.code,
             `monitor ${params.action} refused (${error.code}): ${error.message}`,
@@ -110,6 +112,14 @@ export function buildMonitorTool(getRuntime: (ctx: ExtensionContext) => MonitorR
         }
         throw error;
       }
+    },
+  };
+  return {
+    ...tool,
+    outputSchema: Type.Object({action:Type.String(),board:Type.String(),name:Type.Optional(Type.String()),logPath:Type.Optional(Type.String()),cleared:Type.Optional(Type.Array(Type.String())),kept:Type.Optional(Type.Array(Type.String())),monitors:Type.Array(Type.Object({name:Type.String(),generation:Type.Integer(),status:Type.String(),terminal:Type.String(),queued:Type.Integer(),noticePending:Type.Boolean()}))}),
+    async execute(...args) {
+      const result = await tool.execute(...args);
+      return {...result,structuredContent:JSON.parse(JSON.stringify(result.details))};
     },
   };
 }
