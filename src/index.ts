@@ -93,6 +93,7 @@ export default function monitorExtension(pi: ExtensionAPI): void {
     const persistence: MonitorPersistence = {
       append: (state) => {
         pi.appendEntry(MONITOR_STATE_ENTRY, state);
+        try { pi.events.emit("monitor/changed", {revision:state.revision}); } catch { /* Notification subscribers cannot undo durable monitor state. */ }
         refreshWidget();
       },
     };
